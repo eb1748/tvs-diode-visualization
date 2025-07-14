@@ -1,0 +1,122 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>TVS Diode Voltage Range Visualization</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://unpkg.com/papaparse@latest/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chrono-node/1.3.11/chrono.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.15.0/Recharts.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+  <div id="root" class="container mx-auto p-4"></div>
+
+  <script type="text/babel">
+
+    const { useState, useEffect } = React;
+    const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } = Recharts;
+
+    function App() {
+      const [data, setData] = useState(null);
+      const [widestRange, setWidestRange] = useState(null);
+
+      const processAndCleanData = (rawData) => {
+        return rawData
+          .filter(row => row["Series Name"] && row["Reverse standoff voltage range"])
+          .map(row => {
+            const range = row["Reverse standoff voltage range"].replace(" V", "").split(" to ");
+            const minVoltage = parseFloat(range[0]);
+            const maxVoltage = parseFloat(range[1]);
+            if (isNaN(minVoltage) || isNaN(maxVoltage)) return null;
+            return {
+              series: row["Series Name"],
+              minVoltage,
+              maxVoltage,
+              range: maxVoltage - minVoltage
+            };
+          })
+          .filter(item => item !== null);
+      };
+
+      useEffect(() => {
+        fetch("TVS CSV.csv")
+          .then(response => {
+            if (!response.ok) throw new Error("Network response was not ok");
+            return response.text();
+          })
+          .then(csvText => {
+            Papa.parse(csvText, {
+              header: true,
+              skipEmptyLines: true,
+              transformHeader: header => header.trim().replace(/^"|"$/g, ''),
+              transform: (value, header) => value.trim().replace(/^"|"$/g, ''),
+              complete: (results) => {
+                const cleanedData = processAndCleanData(results.data);
+                setData(cleanedData);
+                const maxRangeSeries = cleanedData.reduce((max, item) =>
+                  item.range > (max.range || 0) ? item : max, {});
+                setWidestRange(maxRangeSeries);
+              },
+              error: (err) => console.error('Error parsing CSV:', err)
+            });
+          })
+          .catch(error => {
+            console.error("Error fetching the CSV file:", error);
+          });
+      }, []);
+
+      if (!data) {
+        return (
+          <div className="text-center text-lg text-gray-600 mt-10">
+            Loading data...
+          </div>
+        );
+      }
+
+      return (
+        <div className="bg-white shadow-lg rounded-lg p-6">
+          <h1 className="text-3xl font-bold text-blue-800 mb-4">TVS Diode Voltage Range Analysis</h1>
+          <p className="text-gray-700 mb-4">
+            This report visualizes the reverse standoff voltage ranges for various TVS diode series.
+            The chart below shows the minimum and maximum voltages for each series, allowing for easy comparison.
+            <br />
+            <strong>Interesting Fact:</strong> The {widestRange.series} series has the widest voltage range
+            ({widestRange.range} V), making it highly versatile for applications requiring broad voltage suppression.
+          </p>
+
+          <h2 className="text-2xl font-semibold text-blue-700 mb-3">Voltage Range by Series</h2>
+          <div className="w-full h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data} layout="vertical" margin={{ top: 10, right: 30, left: 50, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" domain={[0, 600]} label={{ value: 'Voltage (V)', position: 'bottom', offset: 0 }} />
+                <YAxis dataKey="series" type="category" width={100} />
+                <Tooltip formatter={(value, name) => `${value} V`} />
+                <Bar dataKey="minVoltage" stackId="a" fill="transparent" />
+                <Bar dataKey="range" stackId="a" fill="#3B82F6" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <h2 className="text-2xl font-semibold text-blue-700 mt-6 mb-3">Conclusion</h2>
+          <p className="text-gray-700">
+            The visualization highlights the diversity in voltage ranges across TVS diode series.
+            The {widestRange.series} series stands out with its extensive range of {widestRange.range} V,
+            suggesting its suitability for a wide variety of applications. Other series, like SMFE and SMDJE,
+            cater to more specific voltage ranges, which may be ideal for targeted use cases.
+          </p>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
